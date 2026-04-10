@@ -1,0 +1,65 @@
+---
+title: "Install mount-scripts: cifs-utils, scripts, and cloudflared"
+description: "Install cifs-utils and the mount-scripts bash files, make them executable, and optionally install cloudflared to enable Cloudflare Tunnel support."
+---
+
+mount-scripts has one required dependency — `cifs-utils` — which provides the kernel support for mounting CIFS/SMB shares on Linux. If you plan to use Cloudflare Tunnels, you also need `cloudflared`. The scripts themselves are plain bash files with no build step; you clone or copy them and make them executable.
+
+<Steps>
+  <Step title="Install cifs-utils">
+    `cifs-utils` is required for all mounts. Install it with `apt`:
+
+    ```bash
+    sudo apt install cifs-utils
+    ```
+
+    This provides the `mount.cifs` command that `mount-network` uses under the hood.
+  </Step>
+
+  <Step title="Clone or copy the scripts">
+    Clone the repository to a directory of your choice:
+
+    ```bash
+    git clone https://github.com/j-i-rojas/mount-scripts.git
+    cd mount-scripts
+    ```
+
+    Alternatively, download or copy the four script files — `mount-network`, `umount-network`, `start-cf-tunnel`, and `stop-cf-tunnel` — into any directory you like. The scripts expect a `.env` file in the same directory.
+  </Step>
+
+  <Step title="Make the scripts executable">
+    Run `chmod` once to make all four scripts executable:
+
+    ```bash
+    chmod +x mount-network umount-network start-cf-tunnel stop-cf-tunnel
+    ```
+
+    If you only use the mount and unmount scripts and don't need tunnel support, you can limit this to `mount-network` and `umount-network`.
+  </Step>
+
+  <Step title="Install cloudflared (optional)">
+    `cloudflared` is only needed if you use Cloudflare Tunnel mounts (`MOUNT_*` entries with a `cf_tunnel_hostname` field) or standalone tunnel entries (`TUNNEL_*`). Skip this step if you mount shares directly over the local network.
+
+    ```bash
+    wget https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
+    sudo dpkg -i cloudflared-linux-amd64.deb
+    ```
+
+    <Note>
+      These commands install the latest release for Linux amd64. For other architectures, download the appropriate package from the [cloudflared releases page](https://github.com/cloudflare/cloudflared/releases/latest).
+    </Note>
+  </Step>
+</Steps>
+
+## Next steps
+
+With the scripts installed, configure your mounts and tunnels in a `.env` file.
+
+<CardGroup cols={2}>
+  <Card title="Configuration" icon="sliders" href="/configuration">
+    Set up your `.env` file with `MOUNT_*` and `TUNNEL_*` entries and a credentials file.
+  </Card>
+  <Card title="mount-network" icon="hard-drive" href="/scripts/mount-network">
+    Learn the mount command options and how to list configured mounts.
+  </Card>
+</CardGroup>

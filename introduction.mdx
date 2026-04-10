@@ -1,0 +1,50 @@
+---
+title: "mount-scripts: bash scripts for CIFS/SMB network mounts"
+description: "mount-scripts manages CIFS/SMB network share mounts on Linux using four bash scripts, with optional Cloudflare Tunnel support for remote shares."
+---
+
+mount-scripts gives you a simple, repeatable way to mount and unmount CIFS/SMB network shares on Linux. You define your shares once in a `.env` file, then mount or unmount any of them by name with a single command. For shares or services behind Cloudflare Access, built-in tunnel management handles authentication and port forwarding so you can treat remote resources the same as local ones.
+
+## The four scripts
+
+mount-scripts is made up of four focused bash scripts. Each script reads its configuration from the same `.env` file, so you define your mounts and tunnels once and use them everywhere.
+
+<CardGroup cols={2}>
+  <Card title="mount-network" icon="hard-drive" href="/scripts/mount-network">
+    Mounts a configured CIFS/SMB share by name. Creates the mount point if it doesn't exist, verifies server reachability, and uses a credentials file or prompts for a password.
+  </Card>
+  <Card title="umount-network" icon="eject" href="/scripts/umount-network">
+    Unmounts a configured share by name using a lazy unmount. Leaves any associated Cloudflare tunnel running — tunnels must be stopped separately.
+  </Card>
+  <Card title="start-cf-tunnel" icon="shield" href="/scripts/cloudflare-tunnels">
+    Starts a `cloudflared` tunnel in the background. Handles Cloudflare Access browser authentication in the foreground before moving to a silent background process. Saves the PID to `/tmp/` for later.
+  </Card>
+  <Card title="stop-cf-tunnel" icon="circle-stop" href="/scripts/cloudflare-tunnels">
+    Stops a running `cloudflared` tunnel by reading the saved PID file. The tunnel is independent of the mount — unmounting a share does not stop its tunnel automatically.
+  </Card>
+</CardGroup>
+
+## Key capabilities
+
+<CardGroup cols={2}>
+  <Card title="Name-based mount management" icon="tag">
+    Define your shares once in `.env` and reference them by a short name in every script. Run either script with no arguments to list all configured mounts.
+  </Card>
+  <Card title="Cloudflare Tunnel integration" icon="cloud">
+    Mount SMB shares over Cloudflare Access tunnels. Browser-based authentication is handled in the foreground, then the tunnel moves to the background automatically.
+  </Card>
+  <Card title="Standalone tunnel support" icon="arrow-right-arrow-left">
+    Forward any TCP service — databases, Redis, or any other service — through a Cloudflare tunnel independently of any mount, using a simple `TUNNEL_*` entry.
+  </Card>
+  <Card title="Credentials file support" icon="key">
+    Store SMB credentials in `~/.smb_credentials` so scripts never prompt for passwords interactively. If the file is missing, the scripts fall back to a password prompt.
+  </Card>
+</CardGroup>
+
+## Configuration approach
+
+All configuration lives in a single `.env` file in the same directory as the scripts. You copy `.env.example` to `.env`, fill in your mount definitions, and the scripts do the rest. The `.env` file is gitignored by default — your server IPs, hostnames, domain names, and credentials never end up in version control.
+
+<Note>
+  Ready to install? Head to [Installation](/installation) to install `cifs-utils`, clone the scripts, and optionally install `cloudflared`.
+</Note>

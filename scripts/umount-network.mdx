@@ -1,0 +1,95 @@
+---
+title: "umount-network: unmount CIFS/SMB shares cleanly by name"
+description: "Unmount a named CIFS/SMB share with umount-network. Uses lazy unmount, verifies the share was active, and reminds you to stop any Cloudflare tunnel separately."
+---
+
+`umount-network` looks up a named share in your `.env` and unmounts it using `umount -l` (lazy unmount). Lazy unmount detaches the filesystem from the directory tree immediately, even if files are still open, letting the kernel clean up remaining references once they close. After unmounting, the script verifies the mount point is no longer active and, for tunnel-backed mounts, reminds you to stop the Cloudflare tunnel separately.
+
+## Usage
+
+```bash
+sudo ./umount-network <name>
+```
+
+Running the script without arguments lists every mount defined in your `.env`:
+
+```bash
+sudo ./umount-network
+```
+
+```
+Usage: ./umount-network <mount_name>
+
+Available mounts:
+  server1 -> /mnt/server1
+  server2 -> /mnt/server2
+  server1Cf -> /mnt/server1 (via Cloudflare Tunnel)
+```
+
+## Unmount behavior
+
+<Steps>
+  <Step title="Load configuration">
+    The script sources `.env` and builds a map of all `MOUNT_*` entries, the same way `mount-network` does.
+  </Step>
+  <Step title="Check if mounted">
+    If the mount point isn't currently active, the script prints `<mount_point> is not mounted` and exits without error. This makes the script safe to call in cleanup sequences even if the share was never mounted.
+  </Step>
+  <Step title="Lazy unmount">
+    The script runs `umount -l <mount_point>`. The `-l` flag detaches the filesystem from the directory hierarchy immediately; the kernel releases the underlying connection once all open file handles are closed.
+  </Step>
+  <Step title="Verify unmount">
+    The script re-checks `mountpoint -q`. On success it prints `Successfully unmounted <mount_point>`. On failure it exits with an error and suggests running `sudo umount -l <mount_point>` manually.
+  </Step>
+  <Step title="Tunnel reminder (tunnel-backed mounts only)">
+    If the unmounted share had a Cloudflare Tunnel hostname configured, the script prints a reminder:
+
+    ```
+    Tunnel is still running. Stop it with: ./stop-cf-tunnel server1Cf
+    ```
+
+    The tunnel is **not** stopped automatically — see [Cloudflare tunnels](/scripts/cloudflare-tunnels) for details.
+  </Step>
+</Steps>
+
+## Examples
+
+Using the mounts defined in `.env.example`:
+
+```bash
+# Unmount a direct share
+sudo ./umount-network server1
+
+# Unmount a second share
+sudo ./umount-network server2
+
+# Unmount a tunnel-backed share
+# (the tunnel keeps running — stop it separately when you're done)
+sudo ./umount-network server1Cf
+```
+
+After unmounting `server1Cf`, the output looks like this:
+
+```
+Unmounting: /mnt/server1
+Successfully unmounted /mnt/server1
+Tunnel is still running. Stop it with: ./stop-cf-tunnel server1Cf
+```
+
+## Tunnel independence
+
+Unmounting a tunnel-backed share does not stop the Cloudflare tunnel. The tunnel runs as an independent `cloudflared` background process and is managed separately by `start-cf-tunnel` and `stop-cf-tunnel`. This lets you unmount and remount the share without going through the browser authentication flow again.
+
+Stop the tunnel explicitly when you no longer need it:
+
+```bash
+./stop-cf-tunnel server1Cf
+```
+
+<Note>
+  The `--keep-tunnel` flag is mentioned in some older references but is **not implemented** in the script. Tunnel independence is the default behavior — unmounting never stops the tunnel regardless of any flags passed.
+</Note>
+
+<Warning>
+  `umount-network` requires `sudo` because unmounting filesystems is a privileged operation.
+</Warning>

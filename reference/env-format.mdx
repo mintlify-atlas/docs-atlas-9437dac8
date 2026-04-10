@@ -1,0 +1,113 @@
+---
+title: 'mount-scripts .env format: MOUNT_*, TUNNEL_*, CREDS_FILE'
+description: 'Complete reference for every variable in the mount-scripts .env file, including MOUNT_*, TUNNEL_*, CREDS_FILE, and the .smb_credentials format.'
+---
+
+The `.env` file is the single source of truth for all mount and tunnel configuration in mount-scripts. You define one variable per network share or Cloudflare tunnel, and the scripts read them at runtime. The file is gitignored by default so your IPs, hostnames, and credentials never leave your machine. Copy `.env.example` to `.env` to get started, then fill in your values.
+
+## MOUNT\_\* variables
+
+Each SMB share you want to mount gets its own `MOUNT_` variable. The name after `MOUNT_` becomes the identifier you pass to `mount-network` and `umount-network`.
+
+**Format:**
+
+```text
+MOUNT_name="server_ip|share|mount_point|domain|username[|port][|cf_tunnel_hostname]"
+```
+
+Fields are separated by `|`. The first five fields are required. The last two are optional and only needed for tunnel-backed mounts.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `server_ip` | string | Yes | IP address of the SMB server. Use `127.0.0.1` for tunnel-backed mounts that connect through localhost. |
+| `share` | string | Yes | SMB share name on the server (e.g. `C$`, `shared`, `backup`). |
+| `mount_point` | string | Yes | Local directory path where the share will be mounted (e.g. `/mnt/server1`). Created automatically if it does not exist. |
+| `domain` | string | Yes | Windows domain or workgroup name (e.g. `DOMAIN`, `WORKGROUP`). |
+| `username` | string | Yes | SMB username to authenticate as. Used in the password prompt when `CREDS_FILE` is not set (the credentials file itself contains the username separately). |
+| `port` | integer | Optional | Custom SMB port. Required for tunnel-backed mounts — set this to the local port the tunnel listens on (e.g. `4450`). |
+| `cf_tunnel_hostname` | string | Optional | Cloudflare tunnel hostname (e.g. `smb.example.com`). When present, `mount-network` verifies the tunnel is running before mounting. |
+
+### Examples from .env.example
+
+**Direct LAN mount — no tunnel:**
+
+```bash
+MOUNT_server1="192.168.1.10|C$|/mnt/server1|DOMAIN|administrator"
+MOUNT_server2="192.168.1.11|D$|/mnt/server2|DOMAIN|user"
+```
+
+**Tunnel-backed mount over Cloudflare:**
+
+```bash
+MOUNT_server1Cf="127.0.0.1|C$|/mnt/server1|DOMAIN|administrator|4450|smb.example.com"
+```
+
+The `server_ip` is `127.0.0.1` because the traffic flows through a local tunnel port. The `port` (`4450`) and `cf_tunnel_hostname` (`smb.example.com`) fields are both required for this to work — `mount-network` checks that the tunnel is already listening on `localhost:4450` before attempting to mount.
+
+<Note>
+The `cf_tunnel_hostname` field activates tunnel mode. Without it, the script treats the entry as a plain LAN mount and pings `server_ip` to verify reachability.
+</Note>
+
+---
+
+## TUNNEL\_\* variables
+
+Standalone tunnel entries let you forward any TCP service (database, Redis, etc.) through Cloudflare without a corresponding SMB mount. Use `start-cf-tunnel` and `stop-cf-tunnel` to manage them independently.
+
+**Format:**
+
+```text
+TUNNEL_name="cf_tunnel_hostname|local_port"
+```
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `cf_tunnel_hostname` | string | Yes | The Cloudflare tunnel hostname to connect to (e.g. `db.example.com`). |
+| `local_port` | integer | Yes | The local port that `cloudflared` will forward traffic to (e.g. `5432`, `6379`). |
+
+### Examples from .env.example
+
+```bash
+TUNNEL_mydb="db.example.com|5432"
+TUNNEL_redis="redis.example.com|6379"
+```
+
+After running `./start-cf-tunnel mydb`, the remote database is reachable at `localhost:5432`.
+
+---
+
+## CREDS\_FILE variable
+
+```bash
+CREDS_FILE="/home/youruser/.smb_credentials"
+```
+
+`CREDS_FILE` is the path to a credentials file that `mount-network` passes directly to `mount -t cifs` via the `credentials=` option. If this variable is not set, or if the file does not exist at the given path, the script falls back to prompting you for a password at mount time.
+
+<Tip>
+Set `CREDS_FILE` to avoid entering your password every time you mount. This is especially useful when scripting mounts or running them at boot.
+</Tip>
+
+---
+
+## .smb\_credentials file format
+
+The credentials file contains your SMB username, password, and domain, one per line:
+
+```text
+username=administrator
+password=yourpassword
+domain=MYDOMAIN
+```
+
+Save the file (typically at `~/.smb_credentials`) and restrict its permissions so only your user can read it:
+
+```bash
+chmod 600 ~/.smb_credentials
+```
+
+<Warning>
+Without `chmod 600`, other users on the system can read your SMB password. The `mount` command will also warn you if the credentials file has loose permissions.
+</Warning>
+
+The path to this file is what you set in `CREDS_FILE`. You can name it anything and place it anywhere your user can read — `~/.smb_credentials` is the conventional location.

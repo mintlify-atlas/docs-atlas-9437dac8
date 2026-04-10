@@ -1,0 +1,182 @@
+---
+title: "Cloudflare tunnels: start-cf-tunnel and stop-cf-tunnel"
+description: "Manage cloudflared tunnels for SMB shares and standalone TCP services using start-cf-tunnel and stop-cf-tunnel, with two-phase CF Access authentication."
+---
+
+`start-cf-tunnel` and `stop-cf-tunnel` manage `cloudflared access tcp` processes that forward a local port to a remote service through Cloudflare Access. Tunnels are intentionally decoupled from mounts: you start a tunnel, authenticate once in your browser, and then mount or connect as many times as you like without re-authenticating. Stopping the tunnel is a separate, explicit step.
+
+## Tunnel types
+
+Two kinds of entries in `.env` can have tunnels:
+
+<CardGroup cols={2}>
+  <Card title="Standalone tunnels" icon="plug">
+    Defined with `TUNNEL_*` entries. Use these for non-SMB TCP services like databases or caches. No mount fields are needed.
+
+    ```bash
+    # Format: TUNNEL_name="cf_tunnel_hostname|local_port"
+    TUNNEL_mydb="db.example.com|5432"
+    TUNNEL_redis="redis.example.com|6379"
+    ```
+  </Card>
+  <Card title="Tunnel-backed mounts" icon="hard-drive">
+    Defined with `MOUNT_*` entries where the server IP is `127.0.0.1` and the last two fields are the port and CF tunnel hostname.
+
+    ```bash
+    # Format: MOUNT_name="server_ip|share|mount_point|domain|user|port|cf_tunnel_hostname"
+    MOUNT_server1Cf="127.0.0.1|C$|/mnt/server1|DOMAIN|administrator|4450|smb.example.com"
+    ```
+  </Card>
+</CardGroup>
+
+Both types are managed with the same `start-cf-tunnel` and `stop-cf-tunnel` commands. The scripts check `TUNNEL_*` entries first, then fall back to `MOUNT_*` entries that have a tunnel hostname.
+
+## Listing available tunnels
+
+Running either script without arguments lists all tunnels from both entry types:
+
+```bash
+./start-cf-tunnel
+```
+
+```
+Usage: ./start-cf-tunnel <tunnel_name>
+
+Available tunnels:
+  mydb -> db.example.com on localhost:5432
+  redis -> redis.example.com on localhost:6379
+  server1Cf -> smb.example.com on localhost:4450  (mount)
+```
+
+## Starting a tunnel
+
+```bash
+./start-cf-tunnel <name>
+```
+
+The script uses a two-phase approach so that CF Access browser authentication works cleanly from the terminal.
+
+<Steps>
+  <Step title="Phase 1 — foreground authentication">
+    The script runs `cloudflared access tcp --hostname <hostname>` in the foreground **without** a `--url` argument. This causes `cloudflared` to print the CF Access login URL instead of opening a listener:
+
+    ```
+    --------------------------------------------------------------
+     Cloudflare tunnel: smb.example.com -> localhost:4450
+
+     Authenticate in the browser using the URL shown below.
+     Press Ctrl+C when done to move the tunnel to the background.
+    --------------------------------------------------------------
+
+     Login required. Open this URL in your browser:
+
+      https://yourteam.cloudflareaccess.com/cdn-cgi/access/cli?...
+
+     Waiting for authentication (up to 2 minutes)...
+    ```
+
+    Open the URL in your browser and authenticate. Once the page confirms success, return to the terminal and press **Ctrl+C**.
+  </Step>
+  <Step title="Phase 2 — background listener">
+    Ctrl+C triggers a trap that starts `cloudflared` again, this time with `--url localhost:<port>`. Because `cloudflared` caches the auth token from the foreground session, no re-authentication is needed.
+
+    ```
+    Starting tunnel silently on localhost:4450...
+    Tunnel is up on localhost:4450 (PID 12345)
+    ```
+
+    The PID is saved to `/tmp/cf-tunnel-<name>.pid` and a log is written to `/tmp/cf-tunnel-<name>.log`.
+  </Step>
+  <Step title="Mount (for tunnel-backed mounts)">
+    Once the tunnel is up, mount the share:
+
+    ```bash
+    sudo ./mount-network server1Cf
+    ```
+  </Step>
+</Steps>
+
+### Already running
+
+If a PID file exists and the process is still alive, `start-cf-tunnel` exits immediately:
+
+```
+Tunnel 'server1Cf' is already running (PID 12345)
+```
+
+## Stopping a tunnel
+
+```bash
+./stop-cf-tunnel <name>
+```
+
+The script reads the saved PID from `/tmp/cf-tunnel-<name>.pid`, sends `SIGTERM`, and waits up to 5 seconds for the process to exit. If the process doesn't exit in time, it sends `SIGKILL`. The PID file is removed in either case.
+
+```
+Stopping Cloudflare tunnel 'server1Cf' (PID 12345)...
+Tunnel 'server1Cf' stopped
+```
+
+If no PID file exists, or the process is already gone, the script exits cleanly without error.
+
+## Full workflow
+
+<Steps>
+  <Step title="Start the tunnel">
+    ```bash
+    ./start-cf-tunnel server1Cf
+    ```
+    Authenticate in the browser when prompted, then press Ctrl+C.
+  </Step>
+  <Step title="Mount the share">
+    ```bash
+    sudo ./mount-network server1Cf
+    ```
+  </Step>
+  <Step title="Use the share">
+    Access files at `/mnt/server1` as normal.
+  </Step>
+  <Step title="Unmount the share">
+    ```bash
+    sudo ./umount-network server1Cf
+    ```
+    The tunnel keeps running after unmounting.
+  </Step>
+  <Step title="Stop the tunnel">
+    ```bash
+    ./stop-cf-tunnel server1Cf
+    ```
+  </Step>
+</Steps>
+
+## Standalone tunnel example
+
+For a database tunnel that isn't tied to a mount:
+
+```bash
+# Start the tunnel
+./start-cf-tunnel mydb
+
+# Connect your database client to localhost:5432
+psql -h localhost -p 5432 -U youruser mydb
+
+# Stop the tunnel when done
+./stop-cf-tunnel mydb
+```
+
+<Note>
+  Tunnels are independent of mounts. Unmounting a share does **not** stop its tunnel. You must call `./stop-cf-tunnel <name>` explicitly. This lets you unmount and remount without going through browser authentication again.
+</Note>
+
+<Note>
+  `start-cf-tunnel` and `stop-cf-tunnel` do **not** require `sudo`. Only `mount-network` and `umount-network` require elevated privileges.
+</Note>
+
+## Installing cloudflared
+
+`cloudflared` must be installed before using any tunnel commands. The script checks for it and prints installation instructions if it's missing:
+
+```bash
+wget https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
+sudo dpkg -i cloudflared-linux-amd64.deb
+```

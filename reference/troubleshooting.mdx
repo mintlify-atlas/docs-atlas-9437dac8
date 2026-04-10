@@ -1,0 +1,210 @@
+---
+title: 'Fix mount-scripts errors: mounts, tunnels, and credentials'
+description: 'Solutions for every error message produced by mount-network, umount-network, start-cf-tunnel, and stop-cf-tunnel, plus credential and tunnel issues.'
+---
+
+When a mount-scripts command fails, it prints a specific error message and exits with a non-zero status. Most errors point to a misconfiguration in your `.env` file, a network or tunnel that is not ready, or a missing dependency. This page covers every error the scripts produce and tells you exactly how to fix each one.
+
+<AccordionGroup>
+
+  <Accordion title='Error: .env file not found'>
+    **Script:** `mount-network`, `umount-network`, `start-cf-tunnel`, `stop-cf-tunnel`
+
+    The script looks for a `.env` file in the same directory as the script itself. If the file is missing, it exits immediately with this error.
+
+    **Fix:** Copy the example file and fill in your values:
+
+    ```bash
+    cp .env.example .env
+    ```
+
+    Then edit `.env` with your `MOUNT_*`, `TUNNEL_*`, and `CREDS_FILE` values. See the [.env format reference](/reference/env-format) for the full variable syntax.
+  </Accordion>
+
+  <Accordion title="Error: Mount configuration '<name>' not found">
+    **Script:** `mount-network`, `umount-network`
+
+    The name you passed as an argument does not match any `MOUNT_` variable in your `.env`. The script prints all available mount names to help you find the correct one.
+
+    **Fix:** Check the variable name in `.env`. The name is the part after `MOUNT_` — for example, `MOUNT_server1` registers the name `server1`. Make sure you are spelling the name exactly as it appears, including case.
+
+    ```bash
+    # .env
+    MOUNT_server1="192.168.1.10|C$|/mnt/server1|DOMAIN|administrator"
+
+    # correct
+    sudo ./mount-network server1
+
+    # wrong — names are case-sensitive
+    sudo ./mount-network Server1
+    ```
+  </Accordion>
+
+  <Accordion title="Error: Server <ip> is not reachable">
+    **Script:** `mount-network`
+
+    Before mounting a direct LAN share (one without a `cf_tunnel_hostname` field), the script pings the server IP. This error means the ping failed.
+
+    **Fix:** Check the following:
+
+    - The IP address in your `MOUNT_*` entry matches the server's actual IP.
+    - The server is powered on and reachable from your machine.
+    - No firewall is blocking ICMP (ping) traffic between your machine and the server.
+
+    You can test reachability manually:
+
+    ```bash
+    ping -c 1 192.168.1.10
+    ```
+  </Accordion>
+
+  <Accordion title="Error: Cloudflare tunnel is not running on localhost:<port>">
+    **Script:** `mount-network`
+
+    For tunnel-backed mounts (`server_ip` is `127.0.0.1` and `cf_tunnel_hostname` is set), `mount-network` verifies that something is already listening on the expected local port before it tries to mount. This error means the tunnel is not up yet.
+
+    **Fix:** Start the tunnel first, then mount:
+
+    ```bash
+    ./start-cf-tunnel server1Cf
+    sudo ./mount-network server1Cf
+    ```
+
+    Tunnel management is intentionally separate from mounting so that Cloudflare Access browser authentication can be handled cleanly.
+  </Accordion>
+
+  <Accordion title="Error: Mount failed">
+    **Script:** `mount-network`
+
+    The `mount -t cifs` command ran but the mount point is still not mounted afterward. This is a low-level CIFS error.
+
+    **Fix:** Check the most common causes:
+
+    - **Wrong credentials** — verify the username, password, and domain in `~/.smb_credentials` or at the prompt.
+    - **Wrong share name** — confirm the share exists on the server. Share names are case-sensitive on some servers.
+    - **Server not accepting connections** — even if the server is pingable, the SMB service may be down or the port may be blocked.
+
+    For detailed kernel-level error output, check `dmesg` immediately after the failure:
+
+    ```bash
+    sudo dmesg | tail -20
+    ```
+
+    The CIFS kernel module logs mount errors there with more detail than the script can surface.
+  </Accordion>
+
+  <Accordion title="Error: Failed to unmount <path>">
+    **Script:** `umount-network`
+
+    The `umount` command could not unmount the path, usually because a process still has an open file handle on the mount.
+
+    **Fix:** Use a lazy unmount, which detaches the filesystem immediately and cleans up once all file handles are closed:
+
+    ```bash
+    sudo umount -l /mnt/server1
+    ```
+
+    To find which process is holding the mount open:
+
+    ```bash
+    lsof /mnt/server1
+    ```
+  </Accordion>
+
+  <Accordion title="Error: cloudflared is not installed">
+    **Script:** `start-cf-tunnel`
+
+    The `cloudflared` binary is not found in your `PATH`. It is only required for Cloudflare tunnel operations — plain LAN mounts do not need it.
+
+    **Fix:** Install `cloudflared`:
+
+    ```bash
+    wget https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
+    sudo dpkg -i cloudflared-linux-amd64.deb
+    ```
+
+    Verify the installation:
+
+    ```bash
+    cloudflared --version
+    ```
+  </Accordion>
+
+  <Accordion title="Tunnel '<name>' is not running (no PID file found)">
+    **Script:** `stop-cf-tunnel`
+
+    `stop-cf-tunnel` tracks running tunnels by saving the process ID to `/tmp/cf-tunnel-<name>.pid`. If that file does not exist, the script has no record of the tunnel being started.
+
+    **Fix:** This message is informational — the tunnel is already stopped, so no action is needed. If you expected it to be running, start it again:
+
+    ```bash
+    ./start-cf-tunnel server1Cf
+    ```
+
+    If the PID file was deleted manually or by a system reboot, you can verify whether `cloudflared` is still running with:
+
+    ```bash
+    pgrep -a cloudflared
+    ```
+  </Accordion>
+
+  <Accordion title="Error: '<name>' is not a Cloudflare Tunnel entry (missing hostname or port)">
+    **Script:** `start-cf-tunnel`, `stop-cf-tunnel`
+
+    You passed a name that resolves to a `MOUNT_*` entry, but that entry is missing the optional `port` and `cf_tunnel_hostname` fields that make it a tunnel-backed mount. Without both fields, there is no tunnel to start or stop.
+
+    **Fix:** Either pass a `TUNNEL_*` name, or add `port` and `cf_tunnel_hostname` to the `MOUNT_*` entry. For a tunnel-backed mount the full format is:
+
+    ```bash
+    MOUNT_server1Cf="127.0.0.1|C$|/mnt/server1|DOMAIN|administrator|4450|smb.example.com"
+    ```
+
+    See the [.env format reference](/reference/env-format) for field details.
+  </Accordion>
+
+  <Accordion title="Credentials prompted unexpectedly">
+    **Script:** `mount-network`
+
+    If `mount-network` asks for a password even though you have a credentials file set up, one of the following is true:
+
+    - `CREDS_FILE` is not defined in `.env`.
+    - The path in `CREDS_FILE` does not exist or is a typo.
+    - The file exists but has permissions that `mount` refuses (too open).
+
+    **Fix:** Create the credentials file and lock down its permissions:
+
+    ```text
+    username=administrator
+    password=yourpassword
+    domain=MYDOMAIN
+    ```
+
+    ```bash
+    chmod 600 ~/.smb_credentials
+    ```
+
+    Then set `CREDS_FILE` in your `.env`:
+
+    ```bash
+    CREDS_FILE="/home/youruser/.smb_credentials"
+    ```
+
+    <Warning>
+      If the credentials file has permissions looser than `600`, the `mount` command may reject it or warn that it is world-readable. Always use `chmod 600`.
+    </Warning>
+  </Accordion>
+
+</AccordionGroup>
+
+---
+
+## File reference
+
+| File | Description |
+|---|---|
+| `.env` | Your mount definitions — gitignored, do not commit. |
+| `.env.example` | Template to copy from — safe to commit. |
+| `mount-network` | Mounts a configured share by name. |
+| `umount-network` | Unmounts a configured share by name. |
+| `start-cf-tunnel` | Starts a Cloudflare tunnel, handling CF Access login. |
+| `stop-cf-tunnel` | Stops a running Cloudflare tunnel by name. |

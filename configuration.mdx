@@ -1,0 +1,122 @@
+---
+title: "Configure MOUNT_*, TUNNEL_*, and credentials in .env"
+description: "Set up your .env file with MOUNT_* and TUNNEL_* entries, define a credentials file, and configure Cloudflare Tunnel hostnames and ports."
+---
+
+All configuration for mount-scripts lives in a single `.env` file in the same directory as the scripts. You copy `.env.example` to `.env`, then fill in your mount definitions and optional tunnel entries. Every script reads this file at startup, so you define your shares and tunnels once and they're available to all four scripts by name.
+
+## Create your .env file
+
+Start by copying the example file:
+
+```bash
+cp .env.example .env
+```
+
+Then open `.env` in your editor and replace the example values with your own.
+
+<Warning>
+  The `.env` file is gitignored by default. Never commit it — it contains server IPs, hostnames, domain names, and references to credentials files that should stay off version control.
+</Warning>
+
+## MOUNT_* entries
+
+Each mount is defined as a single `MOUNT_*` variable. The name after the underscore is the short identifier you use with `mount-network` and `umount-network`.
+
+```bash
+# Format: MOUNT_name="server_ip|share|mount_point|domain|username[|port][|cf_tunnel_hostname]"
+
+MOUNT_server1="192.168.1.10|C$|/mnt/server1|DOMAIN|administrator"
+MOUNT_server2="192.168.1.11|D$|/mnt/server2|DOMAIN|user"
+MOUNT_server1Cf="127.0.0.1|C$|/mnt/server1|DOMAIN|administrator|4450|smb.example.com"
+```
+
+Fields are separated by `|`. The last two fields are optional and only needed for Cloudflare Tunnel mounts.
+
+| Field | Required | Description |
+|---|---|---|
+| `server_ip` | Yes | IP address of the SMB server. Use `127.0.0.1` for tunnel-backed mounts. |
+| `share` | Yes | Share name on the server (e.g., `C$`, `shared`). |
+| `mount_point` | Yes | Local path where the share will be mounted (e.g., `/mnt/server1`). Created automatically if it doesn't exist. |
+| `domain` | Yes | Windows domain or workgroup (e.g., `DOMAIN`, `WORKGROUP`). |
+| `username` | Yes | Username to authenticate with on the SMB server. |
+| `port` | No | Port to connect on. Required for tunnel-backed mounts — use the local port the tunnel forwards to (e.g., `4450`). |
+| `cf_tunnel_hostname` | No | Cloudflare Tunnel hostname for this mount (e.g., `smb.example.com`). When set, `mount-network` verifies the tunnel is running before attempting to mount. |
+
+<Note>
+  For tunnel-backed mounts, set `server_ip` to `127.0.0.1` and provide both `port` and `cf_tunnel_hostname`. The tunnel must be started with `start-cf-tunnel` before you can mount the share.
+</Note>
+
+## TUNNEL_* entries
+
+Standalone tunnel entries let you forward any TCP service through a Cloudflare tunnel without a mount. Use these for databases, Redis, or any other service you want to reach over Cloudflare Access.
+
+```bash
+# Format: TUNNEL_name="cf_tunnel_hostname|local_port"
+
+TUNNEL_mydb="db.example.com|5432"
+TUNNEL_redis="redis.example.com|6379"
+```
+
+| Field | Description |
+|---|---|
+| `cf_tunnel_hostname` | The Cloudflare Tunnel hostname to connect through. |
+| `local_port` | The local port to forward traffic to on `localhost`. |
+
+Start and stop standalone tunnels with `start-cf-tunnel` and `stop-cf-tunnel` using the name after the underscore (e.g., `./start-cf-tunnel mydb`).
+
+## CREDS_FILE
+
+The `CREDS_FILE` variable points to the SMB credentials file used when mounting shares.
+
+```bash
+CREDS_FILE="/home/youruser/.smb_credentials"
+```
+
+If `CREDS_FILE` is not set or the file doesn't exist, `mount-network` prompts for a password instead.
+
+## Credentials file
+
+Using a credentials file avoids interactive password prompts. Create `~/.smb_credentials` with the following format:
+
+```
+username=administrator
+password=yourpassword
+domain=MYDOMAIN
+```
+
+Then restrict its permissions so only your user can read it:
+
+```bash
+chmod 600 ~/.smb_credentials
+```
+
+<Warning>
+  Never commit your credentials file to version control. Keep it in your home directory (`~/.smb_credentials`) and verify its permissions with `ls -la ~/.smb_credentials`.
+</Warning>
+
+<Tip>
+  The `domain` field in the credentials file can be omitted if you already specify it in your `MOUNT_*` entry — the mount command uses the domain from the `.env` definition.
+</Tip>
+
+## Complete .env example
+
+Here is the full `.env.example` for reference:
+
+```bash
+# Network mount configurations
+# Format: MOUNT_name="server_ip|share|mount_point|domain|username[|port][|cf_tunnel_hostname]"
+
+MOUNT_server1="192.168.1.10|C$|/mnt/server1|DOMAIN|administrator"
+MOUNT_server2="192.168.1.11|D$|/mnt/server2|DOMAIN|user"
+MOUNT_server1Cf="127.0.0.1|C$|/mnt/server1|DOMAIN|administrator|4450|smb.example.com"
+
+# Standalone Cloudflare tunnel configurations (not tied to mounts)
+# Format: TUNNEL_name="cf_tunnel_hostname|local_port"
+
+TUNNEL_mydb="db.example.com|5432"
+TUNNEL_redis="redis.example.com|6379"
+
+# Credentials file (optional - will prompt if not found)
+CREDS_FILE="/home/youruser/.smb_credentials"
+```

@@ -1,0 +1,134 @@
+---
+title: "mount-network: mount CIFS/SMB shares by name on Linux"
+description: "Mount a named CIFS/SMB share with mount-network. Checks tunnel or server reachability, creates the mount point, and uses a credentials file or password prompt."
+---
+
+`mount-network` reads your `.env` configuration and mounts a named CIFS/SMB share with a single command. It handles the full pre-mount sequence for you: verifying Cloudflare tunnel connectivity for tunnel-backed mounts, pinging the server for direct mounts, creating the mount point directory if it doesn't exist, and falling back to a password prompt when no credentials file is configured.
+
+## Usage
+
+```bash
+sudo ./mount-network <name>
+```
+
+Running the script without arguments lists every mount defined in your `.env`:
+
+```bash
+sudo ./mount-network
+```
+
+```
+Usage: ./mount-network <mount_name>
+
+Available mounts:
+  server1 -> //192.168.1.10/C$ at /mnt/server1
+  server2 -> //192.168.1.11/D$ at /mnt/server2
+  server1Cf -> //127.0.0.1/C$ at /mnt/server1 (via Cloudflare Tunnel)
+```
+
+## Mount sequence
+
+When you run `sudo ./mount-network <name>`, the script follows this sequence:
+
+<Steps>
+  <Step title="Load configuration">
+    The script sources `.env` from the same directory as the script and builds a map of all `MOUNT_*` entries.
+  </Step>
+  <Step title="Check if already mounted">
+    If the mount point is already active (`mountpoint -q`), the script exits immediately with no error.
+  </Step>
+  <Step title="Verify connectivity">
+    For **tunnel-backed mounts** (entries with a CF tunnel hostname), the script checks that `localhost:<port>` is reachable using a TCP probe. If the tunnel isn't running, it exits with a message directing you to run `./start-cf-tunnel <name>`.
+
+    For **direct mounts**, the script pings the server IP with a 2-second timeout. If the server is unreachable, it exits before attempting the mount.
+  </Step>
+  <Step title="Create the mount point">
+    If the directory at `mount_point` doesn't exist, the script creates it with `mkdir -p`.
+  </Step>
+  <Step title="Mount the share">
+    The script runs `mount -t cifs` with the options built from your config:
+
+    - `credentials=<CREDS_FILE>` — if the file exists
+    - `domain=<domain>`, `vers=1.0`
+    - `uid` and `gid` — resolved from `$SUDO_UID`/`$SUDO_GID` so files appear owned by your real user, not root
+    - `port=<port>` — if specified in the entry
+    - `ip=127.0.0.1` — added automatically for tunnel-backed mounts
+
+    If `CREDS_FILE` is not set or the file doesn't exist, the script prompts you to enter the password interactively.
+
+    <Note>
+      The script always passes `vers=1.0` to `mount -t cifs`. This targets older SMB1 protocol compatibility. If your server requires a newer SMB version, you would need to edit the `MOUNT_OPTS` line in the script directly.
+    </Note>
+  </Step>
+  <Step title="Verify success">
+    After mounting, the script re-checks `mountpoint -q`. If the mount point is active, it prints `Successfully mounted`. Otherwise, it exits with an error.
+  </Step>
+</Steps>
+
+## Examples
+
+Using the mounts defined in `.env.example`:
+
+```bash
+# Mount a direct share
+sudo ./mount-network server1
+
+# Mount a second direct share on a different drive letter
+sudo ./mount-network server2
+
+# Mount a share that runs through a Cloudflare tunnel
+# (the tunnel must already be running — see start-cf-tunnel)
+sudo ./mount-network server1Cf
+```
+
+## Credentials
+
+The script reads `CREDS_FILE` from your `.env`. If the file exists, it passes it to `mount -t cifs` via the `credentials=` option. If the file is missing or `CREDS_FILE` is not set, the script prompts for a password:
+
+```
+Enter password for administrator@DOMAIN:
+```
+
+The credentials file format is:
+
+```
+username=administrator
+password=yourpassword
+domain=DOMAIN
+```
+
+Secure it so only your user can read it:
+
+```bash
+chmod 600 ~/.smb_credentials
+```
+
+<Tip>
+  Using a credentials file avoids typing your password on every mount and keeps it out of your shell history.
+</Tip>
+
+## Tunnel-backed mounts
+
+For mounts that route through a Cloudflare Tunnel, set the server IP to `127.0.0.1` and include the port and CF tunnel hostname as the last two fields in the entry:
+
+```bash
+MOUNT_server1Cf="127.0.0.1|C$|/mnt/server1|DOMAIN|administrator|4450|smb.example.com"
+```
+
+`mount-network` does **not** start the tunnel — it only verifies that it's already running on `localhost:4450`. Start the tunnel first with `./start-cf-tunnel server1Cf`, then mount:
+
+```bash
+./start-cf-tunnel server1Cf
+sudo ./mount-network server1Cf
+```
+
+If you try to mount before the tunnel is up, the script exits with:
+
+```
+Error: Cloudflare tunnel is not running on localhost:4450
+Start it first with: ./start-cf-tunnel server1Cf
+```
+
+<Warning>
+  `mount-network` requires `sudo` because mounting filesystems is a privileged operation. It uses `$SUDO_UID` and `$SUDO_GID` internally to ensure mounted files are owned by your real user account rather than root.
+</Warning>

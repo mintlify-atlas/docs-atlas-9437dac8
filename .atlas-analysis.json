@@ -1,0 +1,42 @@
+{
+  "projectType": "cli-tool",
+  "projectName": "mount-scripts",
+  "projectDescription": "Bash scripts to mount and unmount CIFS/SMB network shares, with optional Cloudflare Tunnel support for secure remote access.",
+  "theme": "aspen",
+  "primaryColor": "#f68c2c",
+  "lightColor": "#fcc67c",
+  "darkColor": null,
+  "navigation": {
+    "groups": [
+      {
+        "group": "Get Started",
+        "pages": ["introduction", "installation", "configuration"]
+      },
+      {
+        "group": "Usage",
+        "pages": ["scripts/mount-network", "scripts/umount-network", "scripts/cloudflare-tunnels"]
+      },
+      {
+        "group": "Reference",
+        "pages": ["reference/env-format", "reference/troubleshooting"]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Mount and unmount CIFS/SMB network shares with a single command",
+    "Cloudflare Tunnel integration for secure remote SMB access",
+    "Standalone tunnel management for any TCP service (databases, Redis, etc.)",
+    "Credentials file support to avoid password prompts",
+    "Environment-based configuration via .env with MOUNT_* and TUNNEL_* variables",
+    "Automatic tunnel verification before mounting tunnel-backed shares"
+  ],
+  "publicApiSurface": [
+    "mount-network <name>",
+    "umount-network <name> [--keep-tunnel]",
+    "start-cf-tunnel <name>",
+    "stop-cf-tunnel <name>",
+    "MOUNT_name=\"server_ip|share|mount_point|domain|username[|port][|cf_tunnel_hostname]\"",
+    "TUNNEL_name=\"cf_tunnel_hostname|local_port\"",
+    "CREDS_FILE=\"/path/to/.smb_credentials\""
+  ]
+}

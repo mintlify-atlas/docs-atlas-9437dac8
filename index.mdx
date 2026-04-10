@@ -1,97 +1,61 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: "mount-scripts: CIFS/SMB mounts with Cloudflare Tunnel"
+description: "mount-scripts mounts and unmounts CIFS/SMB network shares on Linux by name, with built-in Cloudflare Tunnel support for secure remote access."
 ---
 
-## Setting up
+mount-scripts gives you a simple, repeatable way to manage CIFS/SMB network share mounts on Linux. Define your shares once in a `.env` file, then mount or unmount them with a single command. For shares behind a Cloudflare Access policy, built-in tunnel management handles authentication and forwarding automatically.
 
-Get your documentation site up and running in minutes.
-
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
-
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/installation">
+    Install dependencies and clone the scripts to get up and running fast.
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="Configuration" icon="sliders" href="/configuration">
+    Set up your `.env` file with mount and tunnel definitions.
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="mount-network" icon="hard-drive" href="/scripts/mount-network">
+    Mount a configured CIFS/SMB share by name.
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="Cloudflare Tunnels" icon="shield" href="/scripts/cloudflare-tunnels">
+    Start, stop, and manage Cloudflare tunnels for remote shares and services.
   </Card>
-</Columns>
+</CardGroup>
 
-## Create beautiful pages
+## How it works
 
-Everything you need to create world-class documentation.
+mount-scripts reads your share and tunnel definitions from a `.env` file in the same directory as the scripts. Each mount is identified by a short name — you use that name when mounting, unmounting, or managing tunnels.
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
-  </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
-  </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
-  </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
-  </Card>
-</Columns>
+<Steps>
+  <Step title="Install dependencies">
+    Install `cifs-utils` (required for all mounts) and optionally `cloudflared` for Cloudflare Tunnel support.
+  </Step>
+  <Step title="Configure your mounts">
+    Copy `.env.example` to `.env` and define your `MOUNT_*` and `TUNNEL_*` entries.
+  </Step>
+  <Step title="Make scripts executable">
+    Run `chmod +x mount-network umount-network start-cf-tunnel stop-cf-tunnel` once.
+  </Step>
+  <Step title="Mount a share">
+    Run `sudo ./mount-network <name>` to mount any configured share by name.
+  </Step>
+</Steps>
 
-## Need inspiration?
+## Key features
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+<CardGroup cols={2}>
+  <Card title="Name-based mount management" icon="tag">
+    Define shares once in `.env` and reference them by a short name across all scripts.
+  </Card>
+  <Card title="Cloudflare Tunnel integration" icon="cloud">
+    Mount SMB shares over Cloudflare Access tunnels, with browser-based authentication handled cleanly.
+  </Card>
+  <Card title="Standalone tunnel support" icon="network-wired">
+    Forward any TCP service — databases, Redis, or others — through a Cloudflare tunnel independently of mounts.
+  </Card>
+  <Card title="Credentials file support" icon="key">
+    Store SMB credentials in a secure file so scripts never prompt for passwords interactively.
+  </Card>
+</CardGroup>
+
+<Note>
+  The `.env` file is gitignored by default. Your server IPs, hostnames, and credentials stay off the repository.
+</Note>
